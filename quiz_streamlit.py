@@ -1,23 +1,25 @@
 """
-세계 지식 마스터 퀴즈 — Streamlit 버전
-=======================================
+세계 지식 마스터 퀴즈 — Streamlit 버전 (타이머 + 자동 진행 + 글로벌 테마)
+=============================================================================
 실행:
-    pip install streamlit requests
+    pip install streamlit streamlit-autorefresh requests
     streamlit run quiz_streamlit.py
-
-배포 (무료):
-    https://share.streamlit.io 에 GitHub 업로드 후 연결
 """
 
 from __future__ import annotations
 
 import random
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote
 
 import streamlit as st
+
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTOREFRESH_AVAILABLE = True
+except ImportError:
+    AUTOREFRESH_AVAILABLE = False
 
 try:
     import requests as req_lib
@@ -29,7 +31,8 @@ except ImportError:
 # 설정
 # ==============================================================================
 QUESTIONS_PER_COUNTRY = 5
-QUIZ_TIMER_SECONDS    = 20
+QUIZ_TIMER_SECONDS    = 20   # 문제당 제한 시간
+AUTO_NEXT_SECONDS     = 5    # 정답 확인 후 자동 이동 시간
 
 COUNTRY_META: dict[str, dict] = {
     "대한민국": {"flag": "🇰🇷", "keywords": ["korea", "korean", "seoul"]},
@@ -40,6 +43,199 @@ COUNTRY_META: dict[str, dict] = {
     "일본":     {"flag": "🇯🇵", "keywords": ["japan", "japanese", "tokyo"]},
     "독일":     {"flag": "🇩🇪", "keywords": ["germany", "german", "berlin"]},
 }
+
+# ==============================================================================
+# 글로벌 CSS 테마
+# ==============================================================================
+GLOBAL_CSS = """
+<style>
+/* ── Google Font ── */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;900&display=swap');
+
+/* ── 전체 배경 & 폰트 ── */
+html, body, [class*="css"] {
+    font-family: 'Noto Sans KR', sans-serif !important;
+    background-color: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── 메인 컨테이너 ── */
+.block-container {
+    max-width: 780px !important;
+    padding: 2rem 1.5rem !important;
+    background: #1e293b !important;
+    border-radius: 20px !important;
+    margin-top: 1rem !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+}
+
+/* ── 제목 ── */
+h1, h2, h3 { color: #f8fafc !important; font-weight: 700 !important; }
+
+/* ── 프라이머리 버튼 ── */
+div.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    padding: 0.65rem 1.2rem !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 14px rgba(99,102,241,0.4) !important;
+}
+div.stButton > button[kind="primary"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(99,102,241,0.6) !important;
+}
+
+/* ── 세컨더리 버튼 (선택지) ── */
+div.stButton > button:not([kind="primary"]) {
+    background: #1e3a5f !important;
+    color: #e2e8f0 !important;
+    border: 2px solid #334155 !important;
+    border-radius: 12px !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    padding: 0.7rem 1.2rem !important;
+    transition: all 0.2s ease !important;
+    width: 100% !important;
+}
+div.stButton > button:not([kind="primary"]):hover {
+    border-color: #6366f1 !important;
+    background: #253f6a !important;
+    transform: translateX(4px) !important;
+}
+
+/* ── 텍스트 인풋 ── */
+input[type="text"] {
+    background: #0f172a !important;
+    border: 2px solid #334155 !important;
+    border-radius: 10px !important;
+    color: #f1f5f9 !important;
+    font-size: 1rem !important;
+    padding: 0.55rem 0.8rem !important;
+}
+input[type="text"]:focus {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.25) !important;
+}
+
+/* ── 프로그레스 바 ── */
+div[data-testid="stProgressBar"] > div {
+    background: linear-gradient(90deg, #6366f1, #a78bfa) !important;
+    border-radius: 999px !important;
+}
+div[data-testid="stProgressBar"] {
+    background: #1e3a5f !important;
+    border-radius: 999px !important;
+    height: 10px !important;
+}
+
+/* ── 타이머 박스 ── */
+.timer-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #0f172a;
+    border-radius: 14px;
+    padding: 10px 20px;
+    margin: 0 0 18px;
+    border: 2px solid #334155;
+}
+.timer-num {
+    font-size: 2rem;
+    font-weight: 900;
+    min-width: 2.4ch;
+    text-align: center;
+    transition: color 0.3s;
+}
+.timer-num.green  { color: #34d399; }
+.timer-num.yellow { color: #fbbf24; }
+.timer-num.red    { color: #f87171; animation: pulse 0.6s infinite alternate; }
+@keyframes pulse { from { opacity:1; } to { opacity:0.5; } }
+
+/* ── 정답/오답 박스 ── */
+.ans-correct {
+    background: rgba(52,211,153,0.15);
+    border: 2px solid #34d399;
+    border-radius: 12px;
+    padding: 0.7rem 1rem;
+    margin: 4px 0;
+    font-weight: 700;
+    color: #34d399;
+}
+.ans-wrong {
+    background: rgba(248,113,113,0.15);
+    border: 2px solid #f87171;
+    border-radius: 12px;
+    padding: 0.7rem 1rem;
+    margin: 4px 0;
+    font-weight: 700;
+    color: #f87171;
+}
+.ans-neutral {
+    background: #1e293b;
+    border: 2px solid #334155;
+    border-radius: 12px;
+    padding: 0.7rem 1rem;
+    margin: 4px 0;
+    color: #94a3b8;
+}
+
+/* ── 정보 박스 ── */
+div[data-testid="stAlert"] {
+    background: #1e3a5f !important;
+    border-left: 4px solid #6366f1 !important;
+    border-radius: 10px !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── 나라 선택 카드 ── */
+div.country-card button {
+    height: 110px !important;
+    font-size: 1.1rem !important;
+    line-height: 1.6 !important;
+}
+
+/* ── 자동 이동 카운트다운 ── */
+.auto-next-bar {
+    background: #0f172a;
+    border-radius: 10px;
+    padding: 10px 16px;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    font-size: 0.95rem;
+    text-align: center;
+    margin-top: 12px;
+}
+
+/* ── 랭킹 행 ── */
+.rank-row {
+    background: #0f172a;
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin: 5px 0;
+    border: 1px solid #1e3a5f;
+    font-size: 1rem;
+}
+.rank-row.me {
+    border-color: #6366f1;
+    background: rgba(99,102,241,0.1);
+    font-weight: 700;
+}
+
+/* ── 구분선 ── */
+hr { border-color: #334155 !important; }
+
+/* ── 사이드바 숨김 ── */
+section[data-testid="stSidebar"] { display: none !important; }
+
+/* ── 헤더 숨김 ── */
+header[data-testid="stHeader"] { background: transparent !important; }
+</style>
+"""
 
 # ==============================================================================
 # 폴백 퀴즈 데이터
@@ -258,15 +454,11 @@ def translate_to_korean(text: str) -> str:
     _translation_cache[text] = result
     return result
 
-def _is_korean(text: str) -> bool:
-    return any("\uAC00" <= ch <= "\uD7A3" for ch in text)
-
 def translate_question(q: dict) -> dict:
     texts = [q["question"], q["answer"]] + q["choices"] + [q.get("fact", "")]
     uncached = [t for t in texts if t and t not in _translation_cache]
     def _one(t):
         r = _translate_google(t) or _translate_mymemory(t) or t
-        _translation_cache[t] = r
         return t, r
     with ThreadPoolExecutor(max_workers=8) as ex:
         for orig, tr in ex.map(_one, uncached):
@@ -336,7 +528,6 @@ def fetch_quiz_from_api() -> dict[str, list[dict]]:
     return buckets
 
 def build_quiz() -> dict[str, list[dict]]:
-    """API + 폴백으로 각 나라당 5문제 구성"""
     api_data = fetch_quiz_from_api()
     quiz: dict[str, list[dict]] = {}
     for country in COUNTRY_META:
@@ -351,28 +542,61 @@ def build_quiz() -> dict[str, list[dict]]:
     return quiz
 
 # ==============================================================================
-# Streamlit 세션 초기화
+# 세션 초기화
 # ==============================================================================
 def init_state():
     defaults = {
-        "page": "login",          # login | country_select | quiz | result
+        "page": "login",
         "user_id": "",
         "quiz_data": None,
         "country_list": list(COUNTRY_META.keys()),
-        "completed": [],          # 완료한 나라들
+        "completed": [],
         "total_score": 0,
         "current_country": None,
         "quiz_pool": [],
-        "step": 0,                # 현재 문제 번호
-        "answered": False,        # 현재 문제 답변 여부
-        "selected": None,         # 선택한 답
+        "step": 0,
+        "answered": False,
+        "selected": None,
         "score_this_round": 0,
         "ranking": [],
-        "timer_start": None,
+        "timer_start": None,      # 문제 시작 시각 (time.time())
+        "answer_time": None,      # 정답 확인 시각 (자동 이동용)
+        "timed_out": False,       # 타임아웃 여부
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+# ==============================================================================
+# 타이머 헬퍼
+# ==============================================================================
+def _timer_color(remaining: int) -> str:
+    if remaining > 10:
+        return "green"
+    if remaining > 5:
+        return "yellow"
+    return "red"
+
+def _render_timer(remaining: int):
+    color = _timer_color(remaining)
+    pct = remaining / QUIZ_TIMER_SECONDS
+    st.markdown(
+        f"""<div class="timer-box">
+            <span style="font-size:1.1rem;">⏱</span>
+            <span class="timer-num {color}">{remaining}</span>
+            <span style="color:#94a3b8; font-size:0.9rem;">초 남음</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    st.progress(pct)
+
+def _advance_question():
+    st.session_state.step     += 1
+    st.session_state.answered  = False
+    st.session_state.selected  = None
+    st.session_state.timed_out = False
+    st.session_state.timer_start = time.time()
+    st.session_state.answer_time = None
 
 # ==============================================================================
 # 페이지: 로그인
@@ -380,15 +604,20 @@ def init_state():
 def page_login():
     st.markdown("""
     <div style='text-align:center; padding: 40px 0 20px'>
-        <div style='font-size:3rem'>🌍</div>
-        <h1 style='font-size:2rem; margin:8px 0'>세계 지식 마스터 퀴즈</h1>
-        <p style='color:gray'>5개 나라 × 5문제 — 얼마나 알고 있나요?</p>
+        <div style='font-size:4rem'>🌍</div>
+        <h1 style='font-size:2.2rem; margin:8px 0; background: linear-gradient(135deg,#6366f1,#a78bfa);
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>
+            세계 지식 마스터 퀴즈
+        </h1>
+        <p style='color:#94a3b8; font-size:1rem;'>5개 나라 × 5문제 × 20초 — 얼마나 알고 있나요?</p>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        name = st.text_input("닉네임을 입력하세요", placeholder="예: 퀴즈왕", max_chars=20)
+        name = st.text_input("닉네임을 입력하세요", placeholder="예: 퀴즈왕", max_chars=20,
+                             label_visibility="collapsed")
+        st.markdown("<div style='margin-top:6px'></div>", unsafe_allow_html=True)
         if st.button("🚀 시작하기", use_container_width=True, type="primary"):
             if not name.strip():
                 st.warning("닉네임을 입력해 주세요!")
@@ -408,18 +637,19 @@ def page_country_select():
     max_score = len(completed) * QUESTIONS_PER_COUNTRY
 
     st.markdown(f"### 👋 {st.session_state.user_id}님, 나라를 선택하세요!")
-    st.progress(len(completed) / len(COUNTRY_META),
-                text=f"진행: {len(completed)}/{len(COUNTRY_META)} 나라 완료 | 점수: {total}/{max_score}")
+    st.progress(
+        len(completed) / len(COUNTRY_META),
+        text=f"진행: {len(completed)}/{len(COUNTRY_META)} 나라 완료  |  점수: {total}/{max_score}",
+    )
     st.markdown("---")
 
     cols = st.columns(len(COUNTRY_META))
     for i, (country, meta) in enumerate(COUNTRY_META.items()):
         with cols[i]:
-            done = country in completed
+            done  = country in completed
             label = f"{meta['flag']}\n\n**{country}**\n\n{'✅ 완료' if done else '도전!'}"
             if st.button(label, key=f"country_{country}",
-                         use_container_width=True,
-                         disabled=done):
+                         use_container_width=True, disabled=done):
                 pool = list(st.session_state.quiz_data.get(country, []))
                 if not pool:
                     pool = random.sample(FALLBACK_POOL[country], QUESTIONS_PER_COUNTRY)
@@ -429,7 +659,10 @@ def page_country_select():
                 st.session_state.step             = 0
                 st.session_state.answered         = False
                 st.session_state.selected         = None
+                st.session_state.timed_out        = False
                 st.session_state.score_this_round = 0
+                st.session_state.timer_start      = time.time()
+                st.session_state.answer_time      = None
                 st.session_state.page             = "quiz"
                 st.rerun()
 
@@ -440,7 +673,7 @@ def page_country_select():
             st.rerun()
 
 # ==============================================================================
-# 페이지: 퀴즈
+# 페이지: 퀴즈  (20초 타이머 + 정답 후 5초 자동 이동)
 # ==============================================================================
 def page_quiz():
     country = st.session_state.current_country
@@ -448,7 +681,7 @@ def page_quiz():
     step    = st.session_state.step
     meta    = COUNTRY_META[country]
 
-    # 나라 다 풀었으면 완료 처리
+    # ── 나라 완료 처리 ──
     if step >= len(pool):
         if country not in st.session_state.completed:
             st.session_state.completed.append(country)
@@ -457,56 +690,119 @@ def page_quiz():
         st.rerun()
         return
 
-    q = pool[step]
+    q        = pool[step]
+    answered = st.session_state.answered
+    selected = st.session_state.selected
+    correct  = q["answer"]
+    now      = time.time()
+
+    # ── 자동 새로고침 설정 ──
+    # 답변 전: 1초마다 갱신 (타이머 카운트다운)
+    # 답변 후: 1초마다 갱신 (자동 이동 카운트다운)
+    if AUTOREFRESH_AVAILABLE:
+        st_autorefresh(interval=1000, limit=None, key=f"quiz_refresh_{step}_{answered}")
+
+    # ── 타이머 계산 ──
+    if not answered:
+        elapsed  = now - (st.session_state.timer_start or now)
+        remaining = max(0, int(QUIZ_TIMER_SECONDS - elapsed))
+    else:
+        remaining = 0
+
+    # ── 타임아웃 처리 ──
+    if not answered and remaining == 0:
+        st.session_state.answered  = True
+        st.session_state.selected  = None        # 시간 초과 = 오답
+        st.session_state.timed_out = True
+        st.session_state.answer_time = time.time()
+        st.rerun()
+        return
+
+    # ── 자동 이동 처리 (정답 확인 후 5초) ──
+    if answered and st.session_state.answer_time is not None:
+        time_since_answer = now - st.session_state.answer_time
+        auto_remaining    = max(0, int(AUTO_NEXT_SECONDS - time_since_answer))
+        if time_since_answer >= AUTO_NEXT_SECONDS:
+            _advance_question()
+            st.rerun()
+            return
+    else:
+        auto_remaining = AUTO_NEXT_SECONDS
+
+    # ══════════════════════════════════════════
+    # UI 렌더링
+    # ══════════════════════════════════════════
 
     # 헤더
     st.markdown(f"## {meta['flag']} {country} 퀴즈")
-    progress_val = step / QUESTIONS_PER_COUNTRY
-    st.progress(progress_val, text=f"문제 {step + 1} / {QUESTIONS_PER_COUNTRY}")
-    st.markdown(f"**이번 라운드 점수: {st.session_state.score_this_round} / {step}**")
+    st.progress(
+        step / QUESTIONS_PER_COUNTRY,
+        text=f"문제 {step + 1} / {QUESTIONS_PER_COUNTRY}  |  이번 라운드 점수: {st.session_state.score_this_round}",
+    )
     st.markdown("---")
+
+    # 타이머 (답변 전에만)
+    if not answered:
+        _render_timer(remaining)
 
     # 문제
     st.markdown(f"### ❓ {q['question']}")
     st.markdown("")
 
-    answered = st.session_state.answered
-    selected = st.session_state.selected
-    correct  = q["answer"]
-
-    # 보기 버튼
+    # 보기 버튼 / 결과 표시
     choices = q["choices"]
-    for choice in choices:
-        if answered:
-            if choice == correct:
-                st.success(f"✅ {choice}")
-            elif choice == selected:
-                st.error(f"❌ {choice}")
-            else:
-                st.markdown(f"- {choice}")
-        else:
+    if not answered:
+        for choice in choices:
             if st.button(choice, key=f"choice_{step}_{choice}", use_container_width=True):
-                st.session_state.selected = choice
-                st.session_state.answered = True
+                st.session_state.selected    = choice
+                st.session_state.answered    = True
+                st.session_state.timed_out   = False
+                st.session_state.answer_time = time.time()
                 if choice == correct:
                     st.session_state.score_this_round += 1
                 st.rerun()
+    else:
+        # 결과 보기
+        for choice in choices:
+            if choice == correct:
+                st.markdown(f'<div class="ans-correct">✅ {choice}</div>', unsafe_allow_html=True)
+            elif choice == selected:
+                st.markdown(f'<div class="ans-wrong">❌ {choice}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="ans-neutral">{choice}</div>', unsafe_allow_html=True)
 
-    # 정답 확인 후
-    if answered:
-        if selected == correct:
-            st.markdown("### 🎉 정답입니다!")
+        st.markdown("")
+
+        # 결과 메시지
+        if st.session_state.timed_out:
+            st.markdown(
+                f"<div style='text-align:center; font-size:1.3rem; color:#f87171;'>⏰ 시간 초과! 정답: <b>{correct}</b></div>",
+                unsafe_allow_html=True,
+            )
+        elif selected == correct:
+            st.markdown(
+                "<div style='text-align:center; font-size:1.3rem; color:#34d399;'>🎉 정답입니다!</div>",
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown(f"### 😢 틀렸습니다! 정답: **{correct}**")
+            st.markdown(
+                f"<div style='text-align:center; font-size:1.3rem; color:#f87171;'>😢 틀렸습니다! 정답: <b>{correct}</b></div>",
+                unsafe_allow_html=True,
+            )
 
         if q.get("fact"):
             st.info(f"💡 {q['fact']}")
 
+        # 자동 이동 카운트다운 바
+        st.markdown(
+            f'<div class="auto-next-bar">⏭ {auto_remaining}초 후 다음 문제로 자동 이동합니다</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown("")
-        if st.button("➡️ 다음 문제", type="primary", use_container_width=True):
-            st.session_state.step    += 1
-            st.session_state.answered = False
-            st.session_state.selected = None
+
+        # 수동 이동 버튼
+        if st.button("➡️ 지금 다음 문제로", type="primary", use_container_width=True):
+            _advance_question()
             st.rerun()
 
     # 퀴즈 나가기
@@ -519,10 +815,10 @@ def page_quiz():
 # 페이지: 최종 결과
 # ==============================================================================
 def page_result():
-    total    = st.session_state.total_score
-    max_q    = len(COUNTRY_META) * QUESTIONS_PER_COUNTRY
-    user     = st.session_state.user_id
-    pct      = int(total / max_q * 100)
+    total  = st.session_state.total_score
+    max_q  = len(COUNTRY_META) * QUESTIONS_PER_COUNTRY
+    user   = st.session_state.user_id
+    pct    = int(total / max_q * 100)
 
     if pct >= 90:
         grade, emoji = "🏆 세계 지식 마스터!", "🌟"
@@ -536,11 +832,18 @@ def page_result():
     st.markdown(f"""
     <div style='text-align:center; padding:30px 0'>
         <div style='font-size:4rem'>{emoji}</div>
-        <h1>🎉 퀴즈 완료!</h1>
-        <h2>{user}님의 결과</h2>
-        <div style='font-size:3rem; font-weight:bold; color:#3b82f6'>{total}</div>
-        <div style='font-size:1.2rem; color:gray'>/ {max_q} 점 ({pct}%)</div>
-        <h3 style='margin-top:16px'>{grade}</h3>
+        <h1 style='background:linear-gradient(135deg,#6366f1,#a78bfa);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;'>
+            🎉 퀴즈 완료!
+        </h1>
+        <h2 style='color:#e2e8f0'>{user}님의 결과</h2>
+        <div style='font-size:3.5rem; font-weight:900;
+            background:linear-gradient(135deg,#6366f1,#a78bfa);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;'>
+            {total}
+        </div>
+        <div style='font-size:1.1rem; color:#94a3b8'>/ {max_q} 점 ({pct}%)</div>
+        <h3 style='margin-top:16px; color:#f8fafc'>{grade}</h3>
     </div>
     """, unsafe_allow_html=True)
 
@@ -554,9 +857,14 @@ def page_result():
     st.markdown("### 🏅 랭킹")
     medals = ["🥇", "🥈", "🥉"]
     for i, r in enumerate(ranking[:10]):
-        medal = medals[i] if i < 3 else f"{i+1}."
-        highlight = "**" if r["name"] == user else ""
-        st.markdown(f"{medal} {highlight}{r['name']}{highlight} — {r['score']}점")
+        medal   = medals[i] if i < 3 else f"{i+1}."
+        is_me   = r["name"] == user
+        cls     = "rank-row me" if is_me else "rank-row"
+        name_display = f"<b>{r['name']}</b>" if is_me else r["name"]
+        st.markdown(
+            f'<div class="{cls}">{medal} {name_display} &nbsp;—&nbsp; {r["score"]}점</div>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown("---")
     if st.button("🔄 새로운 도전 시작", type="primary", use_container_width=True):
@@ -573,6 +881,8 @@ st.set_page_config(
     page_icon="🌍",
     layout="centered",
 )
+
+st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
 init_state()
 
