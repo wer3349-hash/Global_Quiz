@@ -61,12 +61,17 @@ html, body, [class*="css"] {
 
 /* ── 메인 컨테이너 ── */
 .block-container {
-    max-width: 780px !important;
-    padding: 2rem 1.5rem !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 2rem 3rem !important;
     background: #1e293b !important;
-    border-radius: 20px !important;
-    margin-top: 1rem !important;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+    border-radius: 0 !important;
+    margin-top: 0 !important;
+    min-height: 100vh !important;
+    box-shadow: none !important;
+}
+.appview-container, .main, section.main {
+    background-color: #1e293b !important;
 }
 
 /* ── 제목 ── */
@@ -219,11 +224,16 @@ div.country-card button {
     margin: 5px 0;
     border: 1px solid #1e3a5f;
     font-size: 1rem;
+    color: #e2e8f0 !important;
 }
 .rank-row.me {
     border-color: #6366f1;
-    background: rgba(99,102,241,0.1);
+    background: rgba(99,102,241,0.15);
     font-weight: 700;
+    color: #a78bfa !important;
+}
+.rank-row b {
+    color: #a78bfa !important;
 }
 
 /* ── 구분선 ── */
@@ -879,7 +889,7 @@ def page_result():
 st.set_page_config(
     page_title="🌍 세계 지식 마스터 퀴즈",
     page_icon="🌍",
-    layout="centered",
+    layout="wide",
 )
 
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
