@@ -63,7 +63,7 @@ html, body, [class*="css"] {
 .block-container {
     max-width: 100% !important;
     width: 100% !important;
-    padding: 2rem 3rem !important;
+    padding: 1rem 2.5rem !important;
     background: #1e293b !important;
     border-radius: 0 !important;
     margin-top: 0 !important;
@@ -75,7 +75,12 @@ html, body, [class*="css"] {
 }
 
 /* ── 제목 ── */
-h1, h2, h3 { color: #f8fafc !important; font-weight: 700 !important; }
+h1, h2, h3 { color: #f8fafc !important; font-weight: 700 !important; margin-bottom: 0.3rem !important; }
+
+/* ── Streamlit 기본 수직 간격 축소 ── */
+div[data-testid="stVerticalBlock"] > div { gap: 0 !important; }
+div[data-testid="stVerticalBlock"] { gap: 0.3rem !important; }
+hr { margin: 0.4rem 0 !important; border-color: #334155 !important; }
 
 /* ── 프라이머리 버튼 ── */
 div.stButton > button[kind="primary"] {
@@ -102,7 +107,7 @@ div.stButton > button:not([kind="primary"]) {
     border-radius: 12px !important;
     font-size: 1rem !important;
     font-weight: 600 !important;
-    padding: 0.7rem 1.2rem !important;
+    padding: 0.45rem 1rem !important;
     transition: all 0.2s ease !important;
     width: 100% !important;
 }
@@ -145,12 +150,12 @@ div[data-testid="stProgressBar"] {
     gap: 10px;
     background: #0f172a;
     border-radius: 14px;
-    padding: 10px 20px;
-    margin: 0 0 18px;
+    padding: 6px 20px;
+    margin: 0 0 8px;
     border: 2px solid #334155;
 }
 .timer-num {
-    font-size: 2rem;
+    font-size: 1.6rem;
     font-weight: 900;
     min-width: 2.4ch;
     text-align: center;
@@ -166,7 +171,7 @@ div[data-testid="stProgressBar"] {
     background: rgba(52,211,153,0.15);
     border: 2px solid #34d399;
     border-radius: 12px;
-    padding: 0.7rem 1.2rem;
+    padding: 0.45rem 1rem;
     margin: 4px 0;
     font-weight: 700;
     color: #34d399;
@@ -177,7 +182,7 @@ div[data-testid="stProgressBar"] {
     background: rgba(248,113,113,0.15);
     border: 2px solid #f87171;
     border-radius: 12px;
-    padding: 0.7rem 1.2rem;
+    padding: 0.45rem 1rem;
     margin: 4px 0;
     font-weight: 700;
     color: #f87171;
@@ -188,7 +193,7 @@ div[data-testid="stProgressBar"] {
     background: #1e293b;
     border: 2px solid #334155;
     border-radius: 12px;
-    padding: 0.7rem 1.2rem;
+    padding: 0.45rem 1rem;
     margin: 4px 0;
     color: #94a3b8;
     font-size: 1rem;
@@ -248,9 +253,6 @@ div.country-card button {
 .rank-row b {
     color: #a78bfa !important;
 }
-
-/* ── 구분선 ── */
-hr { border-color: #334155 !important; }
 
 /* ── 사이드바 숨김 ── */
 section[data-testid="stSidebar"] { display: none !important; }
@@ -767,7 +769,7 @@ def page_quiz():
         auto_remaining = AUTO_NEXT_SECONDS
 
     # ══════════════════════════════════════════
-    # UI 렌더링
+    # UI 렌더링 — 단일 HTML 블록으로 레이아웃 고정
     # ══════════════════════════════════════════
 
     # 헤더
@@ -783,15 +785,12 @@ def page_quiz():
 
     # 문제
     st.markdown(f"### ❓ {q['question']}")
-    st.markdown("")
 
-    # ── 선택지: 항상 HTML 버튼으로 렌더링 (높이 고정) ──
-    # 답변 전에는 클릭 가능한 form 버튼, 답변 후에는 색상만 변경
+    # ── 선택지 렌더링 ──
     choices = q["choices"]
 
     if not answered:
-        # 클릭 가능한 HTML 버튼 — 각 선택지마다 st.button 하나씩 렌더링
-        # (Streamlit 버튼을 쓰되, CSS로 높이를 고정하여 답변 후와 동일한 크기 유지)
+        # 답변 전: 클릭 가능한 st.button
         for choice in choices:
             if st.button(choice, key=f"choice_{step}_{choice}", use_container_width=True):
                 st.session_state.selected    = choice
@@ -801,28 +800,8 @@ def page_quiz():
                 if choice == correct:
                     st.session_state.score_this_round += 1
                 st.rerun()
-
-        # 답변 전: 결과 영역을 같은 높이의 빈 자리로 예약
-        # (결과 메시지 1행 + 팩트 박스 + 자동이동 바 높이를 투명 블록으로 예약)
-        st.markdown(
-            "<div style='visibility:hidden;'>"
-            "<div style='font-size:1.2rem;margin:8px 0'>placeholder</div>"
-            "<div style='padding:0.6rem 1rem;margin:8px 0;'>💡 placeholder fact</div>"
-            "<div style='padding:10px 16px;margin-top:8px;'>placeholder bar</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        # 숨김 처리된 "다음 문제로" 버튼 자리 유지 (답변 후 버튼과 동일한 높이)
-        st.markdown(
-            "<div style='visibility:hidden; pointer-events:none;'>"
-            "<button style='width:100%;padding:0.65rem 1.2rem;border-radius:12px;"
-            "font-size:1rem;font-weight:700;'>➡️ 지금 다음 문제로</button>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
     else:
-        # 답변 후: 선택지를 색상 있는 HTML div로 교체 (버튼과 동일한 패딩/높이)
+        # 답변 후: 선택지 + 결과 메시지 + 팩트 + 카운트다운을 한 블록으로
         choices_html = ""
         for choice in choices:
             if choice == correct:
@@ -832,7 +811,6 @@ def page_quiz():
             else:
                 choices_html += f'<div class="ans-neutral">{choice}</div>'
 
-        # 결과 메시지
         if st.session_state.timed_out:
             result_html = f"<div style='text-align:center;font-size:1.2rem;color:#f87171;margin:8px 0'>⏰ 시간 초과! 정답: <b>{correct}</b></div>"
         elif selected == correct:
@@ -840,21 +818,14 @@ def page_quiz():
         else:
             result_html = f"<div style='text-align:center;font-size:1.2rem;color:#f87171;margin:8px 0'>😢 틀렸습니다! 정답: <b>{correct}</b></div>"
 
-        # 팩트 박스
         fact_html = ""
         if q.get("fact"):
-            fact_html = f"<div style='background:#1e3a5f;border-left:4px solid #6366f1;border-radius:10px;padding:0.6rem 1rem;margin:8px 0;color:#e2e8f0;font-size:0.95rem;'>💡 {q['fact']}</div>"
+            fact_html = f"<div style='background:#1e3a5f;border-left:4px solid #6366f1;border-radius:10px;padding:0.5rem 1rem;margin:6px 0;color:#e2e8f0;font-size:0.9rem;'>💡 {q['fact']}</div>"
 
-        # 자동 이동 카운트다운
-        countdown_html = f'<div class="auto-next-bar" style="margin-top:8px;">⏭ {auto_remaining}초 후 다음 문제로 자동 이동합니다</div>'
+        countdown_html = f'<div class="auto-next-bar" style="margin-top:6px;">⏭ {auto_remaining}초 후 다음 문제로 자동 이동합니다</div>'
 
-        # 모두 한 번에 렌더링 (DOM 노드 추가 없음)
-        st.markdown(
-            choices_html + result_html + fact_html + countdown_html,
-            unsafe_allow_html=True,
-        )
+        st.markdown(choices_html + result_html + fact_html + countdown_html, unsafe_allow_html=True)
 
-        # 수동 이동 버튼 (항상 같은 위치)
         if st.button("➡️ 지금 다음 문제로", type="primary", use_container_width=True):
             _advance_question()
             st.rerun()
