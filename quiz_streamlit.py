@@ -161,32 +161,45 @@ div[data-testid="stProgressBar"] {
 .timer-num.red    { color: #f87171; animation: pulse 0.6s infinite alternate; }
 @keyframes pulse { from { opacity:1; } to { opacity:0.5; } }
 
-/* ── 정답/오답 박스 ── */
+/* ── 정답/오답 박스 (선택지 버튼과 동일 높이) ── */
 .ans-correct {
     background: rgba(52,211,153,0.15);
     border: 2px solid #34d399;
     border-radius: 12px;
-    padding: 0.7rem 1rem;
+    padding: 0.7rem 1.2rem;
     margin: 4px 0;
     font-weight: 700;
     color: #34d399;
+    font-size: 1rem;
+    text-align: center;
 }
 .ans-wrong {
     background: rgba(248,113,113,0.15);
     border: 2px solid #f87171;
     border-radius: 12px;
-    padding: 0.7rem 1rem;
+    padding: 0.7rem 1.2rem;
     margin: 4px 0;
     font-weight: 700;
     color: #f87171;
+    font-size: 1rem;
+    text-align: center;
 }
 .ans-neutral {
     background: #1e293b;
     border: 2px solid #334155;
     border-radius: 12px;
-    padding: 0.7rem 1rem;
+    padding: 0.7rem 1.2rem;
     margin: 4px 0;
     color: #94a3b8;
+    font-size: 1rem;
+    text-align: center;
+}
+
+/* ── stButton 래퍼 마진 제거 (선택지 버튼 간격을 ans-* div와 맞춤) ── */
+div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] div.stButton,
+div.stButton {
+    margin-bottom: 0 !important;
+    margin-top: 0 !important;
 }
 
 /* ── 정보 박스 ── */
@@ -772,9 +785,13 @@ def page_quiz():
     st.markdown(f"### ❓ {q['question']}")
     st.markdown("")
 
-    # 보기 버튼 / 결과 표시
+    # ── 선택지: 항상 HTML 버튼으로 렌더링 (높이 고정) ──
+    # 답변 전에는 클릭 가능한 form 버튼, 답변 후에는 색상만 변경
     choices = q["choices"]
+
     if not answered:
+        # 클릭 가능한 HTML 버튼 — 각 선택지마다 st.button 하나씩 렌더링
+        # (Streamlit 버튼을 쓰되, CSS로 높이를 고정하여 답변 후와 동일한 크기 유지)
         for choice in choices:
             if st.button(choice, key=f"choice_{step}_{choice}", use_container_width=True):
                 st.session_state.selected    = choice
@@ -784,46 +801,60 @@ def page_quiz():
                 if choice == correct:
                     st.session_state.score_this_round += 1
                 st.rerun()
+
+        # 답변 전: 결과 영역을 같은 높이의 빈 자리로 예약
+        # (결과 메시지 1행 + 팩트 박스 + 자동이동 바 높이를 투명 블록으로 예약)
+        st.markdown(
+            "<div style='visibility:hidden;'>"
+            "<div style='font-size:1.2rem;margin:8px 0'>placeholder</div>"
+            "<div style='padding:0.6rem 1rem;margin:8px 0;'>💡 placeholder fact</div>"
+            "<div style='padding:10px 16px;margin-top:8px;'>placeholder bar</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        # 숨김 처리된 "다음 문제로" 버튼 자리 유지 (답변 후 버튼과 동일한 높이)
+        st.markdown(
+            "<div style='visibility:hidden; pointer-events:none;'>"
+            "<button style='width:100%;padding:0.65rem 1.2rem;border-radius:12px;"
+            "font-size:1rem;font-weight:700;'>➡️ 지금 다음 문제로</button>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
     else:
-        # 결과 보기
+        # 답변 후: 선택지를 색상 있는 HTML div로 교체 (버튼과 동일한 패딩/높이)
+        choices_html = ""
         for choice in choices:
             if choice == correct:
-                st.markdown(f'<div class="ans-correct">✅ {choice}</div>', unsafe_allow_html=True)
+                choices_html += f'<div class="ans-correct">✅ {choice}</div>'
             elif choice == selected:
-                st.markdown(f'<div class="ans-wrong">❌ {choice}</div>', unsafe_allow_html=True)
+                choices_html += f'<div class="ans-wrong">❌ {choice}</div>'
             else:
-                st.markdown(f'<div class="ans-neutral">{choice}</div>', unsafe_allow_html=True)
-
-        st.markdown("")
+                choices_html += f'<div class="ans-neutral">{choice}</div>'
 
         # 결과 메시지
         if st.session_state.timed_out:
-            st.markdown(
-                f"<div style='text-align:center; font-size:1.3rem; color:#f87171;'>⏰ 시간 초과! 정답: <b>{correct}</b></div>",
-                unsafe_allow_html=True,
-            )
+            result_html = f"<div style='text-align:center;font-size:1.2rem;color:#f87171;margin:8px 0'>⏰ 시간 초과! 정답: <b>{correct}</b></div>"
         elif selected == correct:
-            st.markdown(
-                "<div style='text-align:center; font-size:1.3rem; color:#34d399;'>🎉 정답입니다!</div>",
-                unsafe_allow_html=True,
-            )
+            result_html = "<div style='text-align:center;font-size:1.2rem;color:#34d399;margin:8px 0'>🎉 정답입니다!</div>"
         else:
-            st.markdown(
-                f"<div style='text-align:center; font-size:1.3rem; color:#f87171;'>😢 틀렸습니다! 정답: <b>{correct}</b></div>",
-                unsafe_allow_html=True,
-            )
+            result_html = f"<div style='text-align:center;font-size:1.2rem;color:#f87171;margin:8px 0'>😢 틀렸습니다! 정답: <b>{correct}</b></div>"
 
+        # 팩트 박스
+        fact_html = ""
         if q.get("fact"):
-            st.info(f"💡 {q['fact']}")
+            fact_html = f"<div style='background:#1e3a5f;border-left:4px solid #6366f1;border-radius:10px;padding:0.6rem 1rem;margin:8px 0;color:#e2e8f0;font-size:0.95rem;'>💡 {q['fact']}</div>"
 
-        # 자동 이동 카운트다운 바
+        # 자동 이동 카운트다운
+        countdown_html = f'<div class="auto-next-bar" style="margin-top:8px;">⏭ {auto_remaining}초 후 다음 문제로 자동 이동합니다</div>'
+
+        # 모두 한 번에 렌더링 (DOM 노드 추가 없음)
         st.markdown(
-            f'<div class="auto-next-bar">⏭ {auto_remaining}초 후 다음 문제로 자동 이동합니다</div>',
+            choices_html + result_html + fact_html + countdown_html,
             unsafe_allow_html=True,
         )
-        st.markdown("")
 
-        # 수동 이동 버튼
+        # 수동 이동 버튼 (항상 같은 위치)
         if st.button("➡️ 지금 다음 문제로", type="primary", use_container_width=True):
             _advance_question()
             st.rerun()
