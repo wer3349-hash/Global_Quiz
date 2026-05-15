@@ -59,19 +59,21 @@ html, body, [class*="css"] {
     color: #e2e8f0 !important;
 }
 
-/* ── 메인 컨테이너 ── */
-.block-container {
-    max-width: 100% !important;
-    width: 100% !important;
-    padding: 1rem 2.5rem !important;
-    background: #1e293b !important;
-    border-radius: 0 !important;
-    margin-top: 0 !important;
-    min-height: 100vh !important;
-    box-shadow: none !important;
-}
+/* ── 전체 앱 배경: 다크 네이비 ── */
 .appview-container, .main, section.main {
-    background-color: #1e293b !important;
+    background-color: #0f172a !important;
+}
+
+/* ── 메인 컨테이너: 중앙 카드 ── */
+.block-container {
+    max-width: 860px !important;
+    width: 100% !important;
+    padding: 1.5rem 2rem !important;
+    background: #1e293b !important;
+    border-radius: 16px !important;
+    margin: 2rem auto !important;
+    min-height: auto !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
 }
 
 /* ── 제목 ── */
@@ -904,7 +906,7 @@ def page_result():
 st.set_page_config(
     page_title="🌍 세계 지식 마스터 퀴즈",
     page_icon="🌍",
-    layout="wide",
+    layout="centered",
 )
 
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
