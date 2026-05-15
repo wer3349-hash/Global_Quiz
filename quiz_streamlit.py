@@ -587,17 +587,31 @@ def _timer_color(remaining: int) -> str:
         return "yellow"
     return "red"
 
-def _render_timer(remaining: int):
+def _render_timer(remaining: int, answered: bool = False):
+    """Always render the timer block at a fixed height to prevent layout shift.
+    When answered, the timer is hidden visually but the space is preserved."""
     color = _timer_color(remaining)
-    pct = remaining / QUIZ_TIMER_SECONDS
-    st.markdown(
-        f"""<div class="timer-box">
-            <span style="font-size:1.1rem;">⏱</span>
-            <span class="timer-num {color}">{remaining}</span>
-            <span style="color:#94a3b8; font-size:0.9rem;">초 남음</span>
-        </div>""",
-        unsafe_allow_html=True,
-    )
+    pct = remaining / QUIZ_TIMER_SECONDS if not answered else 0
+
+    if answered:
+        # Invisible placeholder preserves the exact same height as the real timer box
+        st.markdown(
+            '<div class="timer-box" style="visibility:hidden;">'
+            '<span style="font-size:1.1rem;">⏱</span>'
+            '<span class="timer-num green">00</span>'
+            '<span style="color:#94a3b8; font-size:0.9rem;">초 남음</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""<div class="timer-box">
+                <span style="font-size:1.1rem;">⏱</span>
+                <span class="timer-num {color}">{remaining}</span>
+                <span style="color:#94a3b8; font-size:0.9rem;">초 남음</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
     st.progress(pct)
 
 def _advance_question():
@@ -710,7 +724,7 @@ def page_quiz():
     # 답변 전: 1초마다 갱신 (타이머 카운트다운)
     # 답변 후: 1초마다 갱신 (자동 이동 카운트다운)
     if AUTOREFRESH_AVAILABLE:
-        st_autorefresh(interval=1000, limit=None, key=f"quiz_refresh_{step}_{answered}")
+        st_autorefresh(interval=1000, limit=None, key=f"quiz_refresh_{step}")
 
     # ── 타이머 계산 ──
     if not answered:
@@ -751,9 +765,8 @@ def page_quiz():
     )
     st.markdown("---")
 
-    # 타이머 (답변 전에만)
-    if not answered:
-        _render_timer(remaining)
+    # 타이머 (답변 전에는 실제 타이머, 답변 후에는 같은 높이의 빈 자리 유지)
+    _render_timer(remaining, answered)
 
     # 문제
     st.markdown(f"### ❓ {q['question']}")
